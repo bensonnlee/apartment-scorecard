@@ -112,7 +112,7 @@ export default function Home() {
               Apartment Hunt
             </div>
             <h1 className="my-1 font-display text-[40px] font-black leading-[0.98] tracking-tight">
-              The <em className="font-normal not-italic italic text-clay">Scorecard</em>
+              The <em className="font-normal italic text-clay">Scorecard</em>
             </h1>
             <p className="max-w-[42ch] text-sm text-ink-soft">
               Rate each place as you tour it. Weighted totals rank them automatically — highest
