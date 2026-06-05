@@ -27,7 +27,6 @@ export default function Home() {
     if (mounted) saveState(state);
   }, [state, mounted]);
 
-  // Auto-dismiss toast after 2.5 seconds.
   useEffect(() => {
     if (!toast) return;
     const id = window.setTimeout(() => setToast(null), 2500);
