@@ -1,65 +1,183 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useState } from 'react';
+import type { Apartment, AppState, CatKey, WeightValue } from '@/lib/types';
+import { CATEGORIES } from '@/lib/categories';
+import { rankApartments, score, ratedCount } from '@/lib/scoring';
+import { loadState, saveState, emptyState } from '@/lib/storage';
+import { RankCard } from '@/components/RankCard';
+import { Priorities } from '@/components/Priorities';
+import { Editor } from '@/components/Editor';
 
 export default function Home() {
+  const [state, setState] = useState<AppState>(emptyState);
+  const [mounted, setMounted] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [showPriorities, setShowPriorities] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Hydrate from localStorage once on mount.
+  useEffect(() => {
+    setState(loadState());
+    setMounted(true);
+  }, []);
+
+  // Persist on every change, but only after the initial load.
+  useEffect(() => {
+    if (mounted) saveState(state);
+  }, [state, mounted]);
+
+  // Auto-dismiss toast after 2.5 seconds.
+  useEffect(() => {
+    if (!toast) return;
+    const id = window.setTimeout(() => setToast(null), 2500);
+    return () => window.clearTimeout(id);
+  }, [toast]);
+
+  function updateApartment(updated: Apartment) {
+    setState((s) => ({
+      ...s,
+      apartments: s.apartments.map((a) => (a.id === updated.id ? updated : a)),
+    }));
+  }
+
+  function addApartment() {
+    const apt: Apartment = {
+      id: crypto.randomUUID(),
+      name: '',
+      scores: {},
+      checks: {},
+      notes: '',
+    };
+    setState((s) => ({ ...s, apartments: [...s.apartments, apt] }));
+    setEditId(apt.id);
+  }
+
+  function deleteApartment(id: string) {
+    if (!window.confirm('Delete this place?')) return;
+    setState((s) => ({ ...s, apartments: s.apartments.filter((a) => a.id !== id) }));
+    setEditId(null);
+  }
+
+  function setWeight(key: CatKey, value: WeightValue) {
+    setState((s) => ({ ...s, weights: { ...s.weights, [key]: value } }));
+  }
+
+  function setBudget(budget: number | undefined) {
+    setState((s) => ({ ...s, budget }));
+  }
+
+  function copySummary() {
+    if (state.apartments.length === 0) {
+      setToast('Add some places first.');
+      return;
+    }
+    const sorted = rankApartments(state.apartments, state.weights);
+    let t = 'APARTMENT RANKING\n\n';
+    sorted.forEach((a, i) => {
+      t += `${i + 1}. ${a.name || 'Untitled'} — ${score(a, state.weights)}/100`;
+      t += a.dealbreaker ? ' (deal-breaker)\n' : '\n';
+      if (typeof a.rent === 'number') t += `   Rent: $${a.rent}/mo\n`;
+      CATEGORIES.forEach((c) => {
+        if (a.scores[c.key]) t += `   ${c.icon} ${c.name}: ${a.scores[c.key]}/5\n`;
+      });
+      if (a.notes) t += `   📝 ${a.notes}\n`;
+      t += '\n';
+    });
+    navigator.clipboard
+      .writeText(t)
+      .then(() => setToast('Ranking copied to clipboard.'))
+      .catch(() => setToast('Could not copy automatically.'));
+  }
+
+  // Avoid hydration mismatch: render nothing data-driven until mounted.
+  const editing = mounted ? state.apartments.find((a) => a.id === editId) ?? null : null;
+  const ranked = mounted ? rankApartments(state.apartments, state.weights) : [];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="mx-auto max-w-[560px] px-4.5 pb-20 pt-6">
+      {editing ? (
+        <Editor
+          apartment={editing}
+          weights={state.weights}
+          budget={state.budget}
+          onChange={updateApartment}
+          onDelete={deleteApartment}
+          onClose={() => setEditId(null)}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+      ) : (
+        <>
+          <header className="mb-5">
+            <div className="text-[11px] font-bold uppercase tracking-[0.28em] text-clay">
+              Apartment Hunt
+            </div>
+            <h1 className="my-1 font-display text-[40px] font-black leading-[0.98] tracking-tight">
+              The <em className="font-normal not-italic italic text-clay">Scorecard</em>
+            </h1>
+            <p className="max-w-[42ch] text-sm text-ink-soft">
+              Rate each place as you tour it. Weighted totals rank them automatically — highest
+              score wins the day.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={addApartment}
+                className="rounded-xl bg-clay px-4 py-2.5 text-sm font-semibold text-paper transition-transform active:scale-95"
+              >
+                + Add a place
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPriorities((v) => !v)}
+                className="rounded-xl border-[1.5px] border-line bg-transparent px-4 py-2.5 text-sm font-semibold text-ink"
+              >
+                ⚖ Priorities
+              </button>
+              <button
+                type="button"
+                onClick={copySummary}
+                className="rounded-xl border-[1.5px] border-line bg-transparent px-4 py-2.5 text-sm font-semibold text-ink"
+              >
+                ⧉ Copy ranking
+              </button>
+            </div>
+          </header>
+
+          {showPriorities && (
+            <Priorities
+              weights={state.weights}
+              budget={state.budget}
+              onWeightChange={setWeight}
+              onBudgetChange={setBudget}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          )}
+
+          {toast && <div className="mt-3 text-center text-[12.5px] text-ink-soft">{toast}</div>}
+
+          {mounted && ranked.length === 0 ? (
+            <div className="mt-2 rounded-2xl border-[1.5px] border-dashed border-line px-5 py-10 text-center text-ink-soft">
+              <div className="mb-1.5 font-display text-[21px] italic text-ink">No places yet</div>
+              Add the first apartment you&apos;re touring and start scoring.
+            </div>
+          ) : (
+            ranked.map((apt, i) => (
+              <RankCard
+                key={apt.id}
+                apartment={apt}
+                weights={state.weights}
+                budget={state.budget}
+                rank={i + 1}
+                isLead={i === 0 && !apt.dealbreaker && ratedCount(apt) > 0}
+                onOpen={setEditId}
+              />
+            ))
+          )}
+
+          <div className="mt-6 text-center text-[11.5px] leading-relaxed text-ink-soft">
+            Saved automatically on this device · scores update live as you rate
+          </div>
+        </>
+      )}
     </div>
   );
 }
